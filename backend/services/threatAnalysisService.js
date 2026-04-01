@@ -1,0 +1,225 @@
+const ThreatAssessment = require("../models/ThreatAssessment");
+
+const SQLI_PATTERNS = [
+  /(\bunion\b.*\bselect\b)/i,
+  /(\bor\b\s+1=1)/i,
+  /(--|#|\/\*)/,
+  /(\bdrop\b\s+\btable\b)/i,
+  /(\bselect\b.+\bfrom\b)/i
+];
+
+const XSS_PATTERNS = [
+  /<script\b/i,
+  /javascript:/i,
+  /onerror\s*=/i,
+  /onload\s*=/i,
+  /<iframe\b/i
+];
+
+const PATH_TRAVERSAL_PATTERNS = [
+  /\.\.\//,
+  /\.\.\\/
+];
+
+const SHELL_PATTERNS = [
+  /(;|\|\||&&)\s*(cat|ls|rm|wget|curl|bash|sh)\b/i,
+  /\$\((.*?)\)/,
+  /`[^`]+`/
+];
+
+function clampRisk(value) {
+  return Math.max(0, Math.min(100, value));
+}
+
+function severityFromScore(score) {
+  if (score >= 85) {
+    return "critical";
+  }
+  if (score >= 65) {
+    return "high";
+  }
+  if (score >= 35) {
+    return "medium";
+  }
+  return "low";
+}
+
+function normalizeText(value) {
+  if (!value) {
+    return "";
+  }
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  return JSON.stringify(value);
+}
+
+function buildAssessment(event) {
+  const text = normalizeText(event.input || event.payload || event.metadata);
+  const lowerEventType = (event.eventType || event.action || "generic-event").toLowerCase();
+  const matchedRules = [];
+  const indicators = [];
+  let attackType = "Benign Activity";
+  let riskScore = 10;
+  let impact = "No immediate malicious pattern was identified.";
+  let mitigation = [
+    "Continue monitoring the event stream for repeated suspicious activity."
+  ];
+
+  if (SQLI_PATTERNS.some((pattern) => pattern.test(text))) {
+    matchedRules.push("OWASP-A03-Injection");
+    indicators.push("SQL keywords or comment markers detected in user-controlled input");
+    attackType = "Potential SQL Injection";
+    riskScore = Math.max(riskScore, 85);
+    impact = "An attacker may manipulate database queries, exfiltrate records, or alter healthcare data.";
+    mitigation = [
+      "Use parameterized queries everywhere.",
+      "Validate and sanitize user-controlled input.",
+      "Log and rate-limit repeated malicious requests from the same source."
+    ];
+  }
+
+  if (XSS_PATTERNS.some((pattern) => pattern.test(text))) {
+    matchedRules.push("OWASP-A03-Cross-Site-Scripting");
+    indicators.push("Active script content or event-handler payload detected");
+    attackType = attackType === "Benign Activity" ? "Potential Cross-Site Scripting" : attackType;
+    riskScore = Math.max(riskScore, 75);
+    impact = "An attacker may execute scripts in another user's browser and steal session data.";
+    mitigation = [
+      "Escape untrusted output before rendering.",
+      "Validate and sanitize rich-text or free-form inputs.",
+      "Add Content-Security-Policy headers on the frontend server."
+    ];
+  }
+
+  if (PATH_TRAVERSAL_PATTERNS.some((pattern) => pattern.test(text))) {
+    matchedRules.push("OWASP-A01-Broken-Access-Control");
+    indicators.push("Path traversal tokens detected");
+    attackType = attackType === "Benign Activity" ? "Potential Path Traversal" : attackType;
+    riskScore = Math.max(riskScore, 70);
+    impact = "An attacker may attempt to access files outside intended storage boundaries.";
+    mitigation = [
+      "Normalize and validate file paths on the server.",
+      "Never trust client-supplied filenames or paths.",
+      "Restrict downloads to records tied to the authenticated user or role."
+    ];
+  }
+
+  if (SHELL_PATTERNS.some((pattern) => pattern.test(text))) {
+    matchedRules.push("OWASP-A03-Command-Injection");
+    indicators.push("Shell metacharacters or command substitution syntax detected");
+    attackType = attackType === "Benign Activity" ? "Potential Command Injection" : attackType;
+    riskScore = Math.max(riskScore, 90);
+    impact = "An attacker may try to execute arbitrary operating-system commands on the server.";
+    mitigation = [
+      "Avoid shell execution for user-controlled values.",
+      "Use allowlists for accepted command arguments.",
+      "Generate an immediate alert for admin review."
+    ];
+  }
+
+  if (lowerEventType.includes("failed login")) {
+    matchedRules.push("Brute-Force-Login");
+    indicators.push("Repeated login failures detected");
+    attackType = attackType === "Benign Activity" ? "Potential Brute Force Attempt" : attackType;
+    riskScore = Math.max(riskScore, 45);
+    impact = "Repeated failed logins can indicate credential stuffing or password guessing.";
+    mitigation = [
+      "Keep account lockout and cooldown logic enabled.",
+      "Consider IP-based throttling.",
+      "Review whether the username or email is being targeted repeatedly."
+    ];
+  }
+
+  if (lowerEventType.includes("account locked") || lowerEventType.includes("blocked login")) {
+    matchedRules.push("Brute-Force-Lockout");
+    indicators.push("Account lockout threshold reached after repeated failed logins");
+    attackType = "Brute Force Lockout Triggered";
+    riskScore = Math.max(riskScore, 85);
+    impact = "A user account has been locked after repeated failed logins, indicating likely brute-force or credential-stuffing activity.";
+    mitigation = [
+      "Review the source IP and account targeted by the repeated login failures.",
+      "Keep the account lockout in place until the cooldown period expires.",
+      "Consider notifying the affected user and rotating credentials if needed."
+    ];
+  }
+
+  if (lowerEventType.includes("unauthorized")) {
+    matchedRules.push("OWASP-A01-Broken-Access-Control");
+    indicators.push("Unauthorized access attempt recorded");
+    attackType = attackType === "Benign Activity" ? "Potential Unauthorized Access Attempt" : attackType;
+    riskScore = Math.max(riskScore, 80);
+    impact = "The event indicates a user attempted to access protected healthcare resources without permission.";
+    mitigation = [
+      "Review RBAC decisions for the requested action.",
+      "Alert admins when the same user or IP repeats access denials.",
+      "Check whether sensitive record ids are being enumerated."
+    ];
+  }
+
+  if (lowerEventType.includes("suspicious")) {
+    matchedRules.push("Anomaly-Detection");
+    indicators.push("Platform anomaly rule triggered");
+    attackType = attackType === "Benign Activity" ? "Suspicious Activity" : attackType;
+    riskScore = Math.max(riskScore, 60);
+    impact = "The system identified abnormal behavior that warrants review.";
+    mitigation = [
+      "Review the related logs and user timeline.",
+      "Correlate this event with the source IP and recent actions.",
+      "Escalate to manual investigation if the behavior repeats."
+    ];
+  }
+
+  const severity = severityFromScore(riskScore);
+  const summary = matchedRules.length
+    ? `${attackType} detected with ${severity} severity.`
+    : "No strong attack indicator detected; event retained for audit and monitoring.";
+
+  return {
+    eventType: event.eventType || event.action || "generic-event",
+    summary,
+    matchedRules,
+    indicators,
+    attackType,
+    severity,
+    riskScore: clampRisk(riskScore),
+    impact,
+    mitigation,
+    rawContext: {
+      input: event.input,
+      payload: event.payload,
+      metadata: event.metadata
+    }
+  };
+}
+
+async function createAssessmentFromEvent(event) {
+  const assessment = buildAssessment(event);
+
+  return ThreatAssessment.create({
+    sourceLog: event.sourceLog || null,
+    user: event.user || null,
+    ip: event.ip || null,
+    ...assessment
+  });
+}
+
+function shouldAutoAssess(action, metadata) {
+  const lowerAction = (action || "").toLowerCase();
+  const text = normalizeText(metadata).toLowerCase();
+
+  return [
+    "failed login",
+    "unauthorized",
+    "suspicious"
+  ].some((token) => lowerAction.includes(token)) ||
+    /script|select|union|drop|javascript:|onerror|iframe|\.\.\//i.test(text);
+}
+
+module.exports = {
+  buildAssessment,
+  createAssessmentFromEvent,
+  shouldAutoAssess
+};

@@ -1,0 +1,7 @@
+backend/.env
+backend/uploads/
+backend/node_modules/
+frontend/node_modules/
+client/myapp/node_modules/
+frontend/build/
+*.log
