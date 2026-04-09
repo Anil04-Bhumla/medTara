@@ -2,15 +2,17 @@ const jwt = require("jsonwebtoken");
 
 module.exports = function (req, res, next) {
   const authHeader = req.header("Authorization");
+  const queryToken = typeof req.query.token === "string" ? req.query.token.trim() : "";
+  const rawToken = authHeader || queryToken;
 
-  if (!authHeader) {
+  if (!rawToken) {
     return res.status(401).json({ message: "Access denied. No token provided." });
   }
 
   try {
-    const token = authHeader.startsWith("Bearer ")
-      ? authHeader.slice(7).trim()
-      : authHeader.trim();
+    const token = rawToken.startsWith("Bearer ")
+      ? rawToken.slice(7).trim()
+      : rawToken.trim();
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 

@@ -131,12 +131,12 @@ secure-healthcare-platform/
 
 ## How to Run the Project
 
-### 1. Open the project in VS Code
+### 1. Open the project folder
 
 Open:
 
 ```bash
-/Users/anilgurjar/Desktop/secure-healthcare-platform
+C:\Users\parth\Desktop\Medtara\medTara
 ```
 
 ### 2. Configure backend environment
@@ -185,13 +185,13 @@ npm install
 ### 6. Start frontend
 
 ```bash
-npm start
+npm run dev
 ```
 
 Frontend runs on:
 
 ```text
-http://localhost:3000
+http://localhost:5173
 ```
 
 ## Demo Seed Accounts
