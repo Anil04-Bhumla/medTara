@@ -1,10 +1,12 @@
-const SecurityLog = require("../models/SecurityLog");
-const ThreatAssessment = require("../models/ThreatAssessment");
 const {
   buildAssessment,
   createAssessmentFromEvent
 } = require("../services/threatAnalysisService");
 const { logEvent } = require("../utils/logger");
+const {
+  findSecurityLogById,
+  findLatestThreatAssessmentBySourceLog
+} = require("../data/store");
 
 exports.analyzeThreat = async (req, res) => {
   try {
@@ -41,7 +43,7 @@ exports.analyzeThreat = async (req, res) => {
 
 exports.analyzeSecurityLog = async (req, res) => {
   try {
-    const log = await SecurityLog.findById(req.params.id);
+    const log = await findSecurityLogById(req.params.id);
 
     if (!log) {
       return res.status(404).json({
@@ -49,9 +51,7 @@ exports.analyzeSecurityLog = async (req, res) => {
       });
     }
 
-    const existingAssessment = await ThreatAssessment.findOne({
-      sourceLog: log._id
-    }).sort({ createdAt: -1 });
+    const existingAssessment = await findLatestThreatAssessmentBySourceLog(log._id);
 
     if (existingAssessment) {
       return res.json(existingAssessment);

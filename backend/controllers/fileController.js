@@ -1,24 +1,35 @@
-const File = require("../models/File");
-const User = require("../models/User");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 
 const { encryptFile, decryptFile } = require("../utils/encryption");
 const { logEvent } = require("../utils/logger");
+const {
+  uploadDir,
+  hasValidFileSignature,
+  detectSuspiciousFilename
+} = require("../middleware/uploadMiddleware");
+const { sanitizeFilename } = require("../utils/validation");
+const {
+  findUserByIdAndRole,
+  listFilesForUser,
+  findFileById,
+  createFileRecord
+} = require("../data/store");
 
 async function validateAssignmentUsers(patientId, doctorId) {
   let patient = null;
   let doctor = null;
 
   if (patientId) {
-    patient = await User.findOne({ _id: patientId, role: "patient" });
+    patient = await findUserByIdAndRole(patientId, "patient");
     if (!patient) {
       throw new Error("Invalid patient selection");
     }
   }
 
   if (doctorId) {
-    doctor = await User.findOne({ _id: doctorId, role: "doctor" });
+    doctor = await findUserByIdAndRole(doctorId, "doctor");
     if (!doctor) {
       throw new Error("Invalid doctor selection");
     }
@@ -29,29 +40,7 @@ async function validateAssignmentUsers(patientId, doctorId) {
 
 exports.listFiles = async (req, res) => {
   try {
-    let query = {};
-
-    if (req.user.role === "doctor") {
-      query = {
-        $or: [
-          { doctor: req.user.id },
-          { uploadedBy: req.user.id }
-        ]
-      };
-    } else if (req.user.role === "patient") {
-      query = {
-        $or: [
-          { patient: req.user.id },
-          { uploadedBy: req.user.id }
-        ]
-      };
-    }
-
-    const files = await File.find(query)
-      .populate("uploadedBy", "name email role")
-      .populate("patient", "name email role")
-      .populate("doctor", "name email role")
-      .sort({ uploadedAt: -1 });
+    const files = await listFilesForUser(req.user);
 
     res.json(files);
   } catch (error) {
@@ -64,7 +53,7 @@ exports.listFiles = async (req, res) => {
 
 exports.updateFileAssignment = async (req, res) => {
   try {
-    const file = await File.findById(req.params.id);
+    const file = await findFileById(req.params.id);
 
     if (!file) {
       return res.status(404).json({
@@ -85,10 +74,7 @@ exports.updateFileAssignment = async (req, res) => {
       doctorId: file.doctor
     });
 
-    const updatedFile = await File.findById(file._id)
-      .populate("uploadedBy", "name email role")
-      .populate("patient", "name email role")
-      .populate("doctor", "name email role");
+    const updatedFile = await findFileById(file._id, { populate: true });
 
     res.json({
       message: "File assignment updated successfully",
@@ -147,17 +133,29 @@ exports.uploadFile = async (req, res) => {
     const uploadedFiles = [];
 
     for (let file of req.files) {
+      if (detectSuspiciousFilename(file.originalname) || !hasValidFileSignature(file)) {
+        await logEvent(req.user.id, "Suspicious File Upload Blocked", req.ip, {
+          originalName: file.originalname,
+          mimeType: file.mimetype,
+          size: file.size
+        });
 
-      const fileBuffer = fs.readFileSync(file.path);
+        return res.status(400).json({
+          message: `Suspicious or invalid file detected: ${file.originalname}`
+        });
+      }
 
-      const encryptedData = encryptFile(fileBuffer);
+      const encryptedData = encryptFile(file.buffer);
+      const safeOriginalName = sanitizeFilename(file.originalname);
+      const storedFilename = `${Date.now()}-${crypto.randomUUID()}${path.extname(safeOriginalName)}`;
+      const storedPath = path.join(uploadDir, storedFilename);
 
-      fs.writeFileSync(file.path, encryptedData);
+      fs.writeFileSync(storedPath, encryptedData);
 
-      const newFile = new File({
-        filename: file.filename,
-        originalName: file.originalname,
-        path: file.path,
+      const newFile = await createFileRecord({
+        filename: storedFilename,
+        originalName: safeOriginalName,
+        path: storedPath,
         mimeType: file.mimetype,
         size: file.size,
         uploadedBy: req.user.id,
@@ -165,15 +163,20 @@ exports.uploadFile = async (req, res) => {
         doctor: assignedDoctorId
       });
 
-      await newFile.save();
-
       uploadedFiles.push(newFile);
     }
 
     // 🔐 log event
     await logEvent(req.user.id, "Multiple File Upload", req.ip, {
       patientId: assignedPatientId,
-      doctorId: assignedDoctorId
+      doctorId: assignedDoctorId,
+      fileCount: uploadedFiles.length,
+      files: uploadedFiles.map((item) => ({
+        id: item._id,
+        name: item.originalName,
+        size: item.size,
+        mimeType: item.mimeType
+      }))
     });
 
     res.json({
@@ -199,7 +202,7 @@ exports.uploadFile = async (req, res) => {
 // =====================
 exports.downloadFile = async (req, res) => {
   try {
-    const file = await File.findById(req.params.id);
+    const file = await findFileById(req.params.id);
 
     if (!file) {
       return res.status(404).json({

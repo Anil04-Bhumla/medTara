@@ -1,10 +1,13 @@
-const SecurityLog = require("../models/SecurityLog");
 const { createAssessmentFromEvent, shouldAutoAssess } = require("../services/threatAnalysisService");
+const {
+  createSecurityLog,
+  countRecentSecurityLogsByUser
+} = require("../data/store");
 
 exports.logEvent = async (userId, action, ip, metadata) => {
   try {
     // save normal log
-    const log = await SecurityLog.create({
+    const log = await createSecurityLog({
       user: userId || null,
       action,
       ip,
@@ -12,22 +15,17 @@ exports.logEvent = async (userId, action, ip, metadata) => {
     });
 
     // 🚨 Suspicious Activity Detection
-    const recentLogs = await SecurityLog.find({
-      user: userId,
-      createdAt: {
-        $gte: new Date(Date.now() - 60 * 1000) // last 1 minute
-      }
-    });
+    const recentLogs = await countRecentSecurityLogsByUser(userId, 60 * 1000);
 
     // if too many actions
-    if (recentLogs.length >= 5) {
-      const suspiciousLog = await SecurityLog.create({
+    if (recentLogs >= 5) {
+      const suspiciousLog = await createSecurityLog({
         user: userId,
         action: "🚨 Suspicious Activity Detected",
         ip,
         metadata: {
           reason: "High request volume in a short period",
-          recentLogCount: recentLogs.length
+          recentLogCount: recentLogs
         }
       });
 
