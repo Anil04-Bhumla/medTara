@@ -1,10 +1,8 @@
-const SecurityLog = require("../models/SecurityLog");
+const { listSecurityLogs } = require("../data/store");
 
 exports.getLogs = async (req, res) => {
   try {
-    const logs = await SecurityLog.find()
-      .populate("user", "email")
-      .sort({ createdAt: -1 });
+    const logs = await listSecurityLogs();
 
     res.json(logs);
 

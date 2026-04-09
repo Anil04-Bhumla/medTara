@@ -1,6 +1,11 @@
-const User = require("../models/User");
+const { findUserByEmail, createUser } = require("../data/store");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const {
+  isValidEmail,
+  isStrongPassword,
+  isSafeDisplayName
+} = require("../utils/validation");
 const { logEvent } = require("../utils/logger"); // ⭐ add this
 
 const ALLOWED_SELF_REGISTER_ROLES = ["patient", "doctor"];
@@ -22,6 +27,27 @@ exports.registerUser = async (req, res) => {
     const normalizedEmail = email.trim().toLowerCase();
     const requestedRole = role || "patient";
 
+    if (!isSafeDisplayName(name)) {
+      return res.status(400).json({
+        success: false,
+        message: "Name must be between 2 and 80 characters"
+      });
+    }
+
+    if (!isValidEmail(normalizedEmail)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide a valid email address"
+      });
+    }
+
+    if (!isStrongPassword(password)) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 8 characters and include uppercase, lowercase, number, and special character"
+      });
+    }
+
     if (!ALLOWED_SELF_REGISTER_ROLES.includes(requestedRole)) {
       return res.status(403).json({
         success: false,
@@ -29,7 +55,7 @@ exports.registerUser = async (req, res) => {
       });
     }
 
-    const existingUser = await User.findOne({ email: normalizedEmail });
+    const existingUser = await findUserByEmail(normalizedEmail);
 
     if (existingUser) {
       return res.status(400).json({
@@ -40,14 +66,12 @@ exports.registerUser = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const user = new User({
+    const user = await createUser({
       name: name.trim(),
       email: normalizedEmail,
       password: hashedPassword,
       role: requestedRole
     });
-
-    await user.save();
 
     return res.status(201).json({
       success: true,
@@ -81,7 +105,15 @@ exports.loginUser = async (req, res) => {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
-    const user = await User.findOne({ email: normalizedEmail });
+
+    if (!isValidEmail(normalizedEmail)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide a valid email address"
+      });
+    }
+
+    const user = await findUserByEmail(normalizedEmail);
 
     if (!user) {
       await logEvent(null, "Failed Login - Unknown Email", req.ip, {
@@ -93,7 +125,7 @@ exports.loginUser = async (req, res) => {
     }
 
     // 🔒 Check if account is locked
-    if (user.lockUntil && user.lockUntil > Date.now()) {
+    if (user.lockUntil && new Date(user.lockUntil).getTime() > Date.now()) {
       const retryAfterMinutes = Math.ceil((new Date(user.lockUntil).getTime() - Date.now()) / (60 * 1000));
 
       await logEvent(user._id, "Blocked Login While Account Locked", req.ip, {

@@ -1,4 +1,4 @@
-const ThreatAssessment = require("../models/ThreatAssessment");
+const { createThreatAssessmentRecord } = require("../data/store");
 
 const SQLI_PATTERNS = [
   /(\bunion\b.*\bselect\b)/i,
@@ -25,6 +25,12 @@ const SHELL_PATTERNS = [
   /(;|\|\||&&)\s*(cat|ls|rm|wget|curl|bash|sh)\b/i,
   /\$\((.*?)\)/,
   /`[^`]+`/
+];
+
+const SUSPICIOUS_UPLOAD_PATTERNS = [
+  /\.(php|exe|js|sh|bat|cmd|scr|ps1)$/i,
+  /\.(pdf|png|jpe?g)\.(exe|js|sh|bat|cmd|scr|ps1)$/i,
+  /macro/i
 ];
 
 function clampRisk(value) {
@@ -159,6 +165,32 @@ function buildAssessment(event) {
     ];
   }
 
+  if (lowerEventType.includes("suspicious file upload")) {
+    matchedRules.push("Malicious-File-Upload");
+    indicators.push("Suspicious upload attributes or invalid file signatures detected");
+    attackType = "Potential Malicious File Upload";
+    riskScore = Math.max(riskScore, 88);
+    impact = "An attacker may be attempting to store executable or disguised content on the platform.";
+    mitigation = [
+      "Block the upload and retain the event for investigation.",
+      "Verify MIME type, extension, and file signature before storage.",
+      "Review the source account and IP for related malicious behavior."
+    ];
+  }
+
+  if (SUSPICIOUS_UPLOAD_PATTERNS.some((pattern) => pattern.test(text))) {
+    matchedRules.push("Malicious-File-Pattern");
+    indicators.push("Suspicious file extension or upload indicator detected");
+    attackType = attackType === "Benign Activity" ? "Potential Malicious File Upload" : attackType;
+    riskScore = Math.max(riskScore, 82);
+    impact = "The event includes file attributes commonly associated with disguised or executable payloads.";
+    mitigation = [
+      "Reject files with risky double extensions or executable content.",
+      "Inspect file signatures instead of trusting names alone.",
+      "Escalate repeated attempts for admin review."
+    ];
+  }
+
   if (lowerEventType.includes("suspicious")) {
     matchedRules.push("Anomaly-Detection");
     indicators.push("Platform anomaly rule triggered");
@@ -198,7 +230,7 @@ function buildAssessment(event) {
 async function createAssessmentFromEvent(event) {
   const assessment = buildAssessment(event);
 
-  return ThreatAssessment.create({
+  return createThreatAssessmentRecord({
     sourceLog: event.sourceLog || null,
     user: event.user || null,
     ip: event.ip || null,

@@ -149,10 +149,26 @@ Example:
 
 ```env
 PORT=8000
-MONGO_URI=your_mongodb_connection_string
 JWT_SECRET=your_jwt_secret
 AES_SECRET=your_aes_secret
+MONGO_URI=your_mongodb_connection_string
 ```
+
+Optional isolated demo mode:
+
+```env
+ALLOW_FILE_DB=true
+```
+
+Optional HTTPS mode:
+
+```env
+HTTPS_ENABLED=true
+SSL_KEY_PATH=path_to_private_key
+SSL_CERT_PATH=path_to_certificate
+```
+
+If `ALLOW_FILE_DB=true`, the backend runs in local demo mode and stores data in `backend/data/local-db.json`.
 
 ### 3. Install backend dependencies
 
@@ -170,7 +186,7 @@ npm start
 Backend runs on:
 
 ```text
-http://localhost:8000
+https://localhost:8000
 ```
 
 ### 5. Install frontend dependencies
@@ -178,20 +194,20 @@ http://localhost:8000
 Open a second terminal:
 
 ```bash
-cd frontend
+cd client/myapp
 npm install
 ```
 
 ### 6. Start frontend
 
 ```bash
-npm start
+npm run dev
 ```
 
 Frontend runs on:
 
 ```text
-http://localhost:3000
+http://localhost:5173
 ```
 
 ## Demo Seed Accounts

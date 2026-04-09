@@ -1,10 +1,13 @@
-require("dotenv").config();
+require("../config/runtime");
 
 const bcrypt = require("bcryptjs");
 
 const connectDB = require("../config/db");
-const User = require("../models/User");
-const File = require("../models/File");
+const {
+  findUserByEmail,
+  createUser,
+  updateSeedAssignments
+} = require("../data/store");
 
 const demoUsers = [
   {
@@ -33,7 +36,7 @@ async function seedDemoUsers() {
   const savedUsers = {};
 
   for (const userData of demoUsers) {
-    const existingUser = await User.findOne({ email: userData.email });
+    const existingUser = await findUserByEmail(userData.email);
 
     if (existingUser) {
       existingUser.name = userData.name;
@@ -47,7 +50,7 @@ async function seedDemoUsers() {
       continue;
     }
 
-    const createdUser = await User.create({
+    const createdUser = await createUser({
       ...userData,
       password: await bcrypt.hash(userData.password, 10)
     });
@@ -55,29 +58,16 @@ async function seedDemoUsers() {
     console.log(`Created ${userData.role}: ${userData.email}`);
   }
 
-  const patient = savedUsers.patient || await User.findOne({ email: "patient@securehealth.local" });
-  const doctor = savedUsers.doctor || await User.findOne({ email: "doctor@securehealth.local" });
-  const admin = savedUsers.admin || await User.findOne({ email: "admin@securehealth.local" });
+  const patient = savedUsers.patient || await findUserByEmail("patient@securehealth.local");
+  const doctor = savedUsers.doctor || await findUserByEmail("doctor@securehealth.local");
+  const admin = savedUsers.admin || await findUserByEmail("admin@securehealth.local");
 
   if (patient && doctor && admin) {
-    await File.updateMany(
-      { patient: null, doctor: null },
-      {
-        $set: {
-          patient: patient._id,
-          doctor: doctor._id
-        }
-      }
-    );
-
-    await File.updateMany(
-      { uploadedBy: null },
-      {
-        $set: {
-          uploadedBy: admin._id
-        }
-      }
-    );
+    await updateSeedAssignments({
+      patientId: patient._id,
+      doctorId: doctor._id,
+      adminId: admin._id
+    });
   }
 }
 

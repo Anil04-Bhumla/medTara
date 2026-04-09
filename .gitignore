@@ -1,7 +1,9 @@
 backend/.env
+backend/data/local-db.json
 backend/uploads/
 backend/node_modules/
 frontend/node_modules/
 client/myapp/node_modules/
 frontend/build/
+client/myapp/dist/
 *.log

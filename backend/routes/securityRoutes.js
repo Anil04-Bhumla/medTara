@@ -3,6 +3,7 @@ const router = express.Router();
 
 const authMiddleware = require("../middleware/authMiddleware");
 const roleMiddleware = require("../middleware/roleMiddleware");
+const { createRateLimiter } = require("../middleware/rateLimitMiddleware");
 
 const {
   getSecurityLogs,
@@ -14,10 +15,16 @@ const {
   previewThreat
 } = require("../controllers/threatController");
 
-router.get("/logs", authMiddleware, roleMiddleware("admin"), getSecurityLogs);
-router.get("/assessments", authMiddleware, roleMiddleware("admin"), getThreatAssessments);
-router.post("/analyze", authMiddleware, roleMiddleware("admin"), analyzeThreat);
-router.post("/preview", authMiddleware, roleMiddleware("admin"), previewThreat);
-router.post("/logs/:id/analyze", authMiddleware, roleMiddleware("admin"), analyzeSecurityLog);
+const securityRateLimiter = createRateLimiter({
+  windowMs: 5 * 60 * 1000,
+  maxRequests: 40,
+  keyPrefix: "security"
+});
+
+router.get("/logs", authMiddleware, securityRateLimiter, roleMiddleware("admin"), getSecurityLogs);
+router.get("/assessments", authMiddleware, securityRateLimiter, roleMiddleware("admin"), getThreatAssessments);
+router.post("/analyze", authMiddleware, securityRateLimiter, roleMiddleware("admin"), analyzeThreat);
+router.post("/preview", authMiddleware, securityRateLimiter, roleMiddleware("admin"), previewThreat);
+router.post("/logs/:id/analyze", authMiddleware, securityRateLimiter, roleMiddleware("admin"), analyzeSecurityLog);
 
 module.exports = router;

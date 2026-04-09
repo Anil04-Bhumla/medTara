@@ -1,12 +1,9 @@
-const SecurityLog = require("../models/SecurityLog");
-const ThreatAssessment = require("../models/ThreatAssessment");
+const { listSecurityLogs, listThreatAssessments } = require("../data/store");
 
 exports.getSecurityLogs = async (req, res) => {
   try {
 
-    const logs = await SecurityLog.find()
-      .populate("user", "email")
-      .sort({ createdAt: -1 });
+    const logs = await listSecurityLogs();
 
     res.json(logs);
 
@@ -21,10 +18,7 @@ exports.getSecurityLogs = async (req, res) => {
 
 exports.getThreatAssessments = async (req, res) => {
   try {
-    const assessments = await ThreatAssessment.find()
-      .populate("user", "email role")
-      .populate("sourceLog")
-      .sort({ createdAt: -1 });
+    const assessments = await listThreatAssessments();
 
     res.json(assessments);
   } catch (error) {
