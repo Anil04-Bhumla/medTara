@@ -201,6 +201,12 @@ function serializeThreatAssessmentDoc(assessment) {
     mitigation: assessment.mitigation || [],
     status: assessment.status,
     rawContext: assessment.rawContext,
+    aiSummary: assessment.aiSummary || null,
+    aiImpact: assessment.aiImpact || null,
+    aiMitigation: assessment.aiMitigation || [],
+    aiConfidence: assessment.aiConfidence || null,
+    aiAttackVector: assessment.aiAttackVector || null,
+    aiAnalyzed: assessment.aiAnalyzed || false,
     createdAt: assessment.createdAt,
     updatedAt: assessment.updatedAt
   };

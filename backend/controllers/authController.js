@@ -7,8 +7,29 @@ const {
   isSafeDisplayName
 } = require("../utils/validation");
 const { logEvent } = require("../utils/logger"); // ⭐ add this
+const { isHttpsEnabled } = require("../config/runtime");
 
 const ALLOWED_SELF_REGISTER_ROLES = ["patient", "doctor"];
+const AUTH_COOKIE_NAME = "secure_healthcare_token";
+
+function getAuthCookieOptions() {
+  return {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: isHttpsEnabled(),
+    maxAge: 24 * 60 * 60 * 1000,
+    path: "/"
+  };
+}
+
+function buildAuthPayload(user) {
+  return {
+    id: user._id,
+    name: user.name,
+    email: user.email,
+    role: user.role
+  };
+}
 
 // =====================
 // Register
@@ -189,24 +210,42 @@ exports.loginUser = async (req, res) => {
     await logEvent(user._id, "Successful Login", req.ip);
 
     const token = jwt.sign(
-      { id: user._id ,
-        role: user.role 
+      {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role
       },
       process.env.JWT_SECRET,
       { expiresIn: "1d" }
     );
 
+    res.cookie(AUTH_COOKIE_NAME, token, getAuthCookieOptions());
+
     return res.json({
-      token,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role
-      }
+      user: buildAuthPayload(user)
     });
   } catch (error) {
     console.error("Login Error:", error);
     res.status(500).json({ error: error.message });
   }
+};
+
+exports.logoutUser = async (req, res) => {
+  res.clearCookie(AUTH_COOKIE_NAME, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: isHttpsEnabled(),
+    path: "/"
+  });
+
+  return res.json({
+    message: "Logged out successfully"
+  });
+};
+
+exports.getCurrentUser = async (req, res) => {
+  return res.json({
+    user: buildAuthPayload(req.user)
+  });
 };

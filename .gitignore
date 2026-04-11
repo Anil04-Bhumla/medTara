@@ -6,4 +6,7 @@ frontend/node_modules/
 client/myapp/node_modules/
 frontend/build/
 client/myapp/dist/
+ai-services/.env
+ai-services/__pycache__/
+ai-services/services/__pycache__/
 *.log

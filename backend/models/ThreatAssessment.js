@@ -63,6 +63,31 @@ const threatAssessmentSchema = new mongoose.Schema(
     rawContext: {
       type: Object,
       default: undefined
+    },
+    aiSummary: {
+      type: String,
+      default: null
+    },
+    aiImpact: {
+      type: String,
+      default: null
+    },
+    aiMitigation: {
+      type: [String],
+      default: []
+    },
+    aiConfidence: {
+      type: String,
+      enum: ["high", "medium", "low", null],
+      default: null
+    },
+    aiAttackVector: {
+      type: String,
+      default: null
+    },
+    aiAnalyzed: {
+      type: Boolean,
+      default: false
     }
   },
   { timestamps: true }

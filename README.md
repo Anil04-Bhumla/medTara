@@ -4,7 +4,7 @@
 
 This project is a secure healthcare data sharing platform developed for a **Data Security and Privacy** course. It demonstrates how sensitive medical data can be protected using authentication, role-based access control, encryption, security logging, and a Threat Analysis and Risk Assessment (TARA) module.
 
-The system allows different types of users such as **patients**, **doctors**, and **admins** to interact with healthcare records under controlled permissions. It also includes a security monitoring module that analyzes suspicious events and assigns risk levels.
+The system allows different types of users such as **patients**, **doctors**, and **admins** to interact with healthcare records under controlled permissions. It also includes a security monitoring module that analyzes suspicious events and assigns risk levels through an AI-driven Threat Analysis and Risk Assessment (TARA) workflow backed by Gemini, with graceful fallback to baseline platform rules when the AI service is unavailable.
 
 ## Main Objectives
 
@@ -56,13 +56,16 @@ The system allows different types of users such as **patients**, **doctors**, an
 
 ### TARA Module
 
-- Rule-based threat analysis engine
+- AI-driven threat analysis using a Gemini-backed service
+- Rule-based baseline detection retained as a fallback and as contextual hints for the AI pipeline
 - Threat assessment includes:
   - attack type
   - severity
   - risk score
   - likely impact
   - recommended mitigation
+  - AI confidence
+  - attack vector analysis
 - Admin dashboard for:
   - viewing security logs
   - viewing threat assessments
@@ -170,6 +173,12 @@ SSL_CERT_PATH=path_to_certificate
 
 If `ALLOW_FILE_DB=true`, the backend runs in local demo mode and stores data in `backend/data/local-db.json`.
 
+Optional AI service connection:
+
+```env
+AI_SERVICE_URL=http://localhost:5001
+```
+
 ### 3. Install backend dependencies
 
 ```bash
@@ -194,20 +203,37 @@ https://localhost:8000
 Open a second terminal:
 
 ```bash
-cd client/myapp
+cd frontend
 npm install
 ```
 
 ### 6. Start frontend
 
 ```bash
-npm run dev
+npm start
 ```
 
 Frontend runs on:
 
 ```text
 http://localhost:5173
+```
+
+### 7. Start AI services
+
+Open a third terminal:
+
+```bash
+cd ai-services
+pip install -r requirements.txt
+python app.py
+```
+
+Add `ai-services/.env` with:
+
+```env
+GEMINI_API_KEY=your_actual_gemini_api_key
+GEMINI_MODEL=gemini-2.0-flash
 ```
 
 ## Demo Seed Accounts
@@ -257,7 +283,7 @@ Demo users:
 - AES-based backend file encryption
 - Access restriction for sensitive records
 - Security activity logging
-- Threat detection and risk scoring
+- AI-driven threat detection and risk scoring
 
 ## Important Notes
 
@@ -267,7 +293,7 @@ Demo users:
 - Encrypted file upload/download flow
 - Patient-doctor record assignment
 - Security logging and suspicious activity detection
-- Rule-based TARA dashboard
+- AI-driven TARA dashboard with Gemini-backed assessments and fallback baseline analysis
 
 ### What is not fully implemented yet
 
@@ -278,7 +304,7 @@ Demo users:
 
 ## Limitations
 
-- TARA currently uses a **rule-based threat analysis engine**, not a live LLM API
+- AI-driven TARA depends on the optional `ai-services` Gemini service
 - HTTPS is described as part of real deployment architecture, but local development uses standard HTTP
 - The project is designed as a secure academic prototype, not a production hospital system
 

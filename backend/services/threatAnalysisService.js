@@ -62,6 +62,45 @@ function normalizeText(value) {
   return JSON.stringify(value);
 }
 
+function normalizeList(value, fallback = []) {
+  if (!Array.isArray(value)) {
+    return fallback;
+  }
+
+  const normalized = value
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+
+  return normalized.length ? normalized : fallback;
+}
+
+function normalizeOptionalText(value, fallback = null) {
+  const text = String(value || "").trim();
+  return text || fallback;
+}
+
+function normalizeSeverity(value, fallback) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return ["low", "medium", "high", "critical"].includes(normalized)
+    ? normalized
+    : fallback;
+}
+
+function normalizeConfidence(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return ["low", "medium", "high"].includes(normalized) ? normalized : null;
+}
+
+function normalizeRiskScore(value, fallback) {
+  const numeric = Number(value);
+
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+
+  return clampRisk(Math.round(numeric));
+}
+
 function buildAssessment(event) {
   const text = normalizeText(event.input || event.payload || event.metadata);
   const lowerEventType = (event.eventType || event.action || "generic-event").toLowerCase();
@@ -228,7 +267,7 @@ function buildAssessment(event) {
 }
 
 async function createAssessmentFromEvent(event) {
-  const assessment = buildAssessment(event);
+  const assessment = await buildAssessmentWithAI(event);
 
   return createThreatAssessmentRecord({
     sourceLog: event.sourceLog || null,
@@ -236,6 +275,119 @@ async function createAssessmentFromEvent(event) {
     ip: event.ip || null,
     ...assessment
   });
+}
+
+/**
+ * Build the payload sent to the Python AI service.
+ * Rule-based output is included only as context/fallback hints.
+ */
+function buildAIServicePayload(event, ruleBasedAssessment) {
+  return {
+    eventType: event.eventType || event.action || "generic-event",
+    input: normalizeText(event.input),
+    payload: normalizeText(event.payload),
+    metadata: event.metadata || null,
+    ruleBasedHints: {
+      summary: ruleBasedAssessment.summary,
+      attackType: ruleBasedAssessment.attackType,
+      severity: ruleBasedAssessment.severity,
+      riskScore: ruleBasedAssessment.riskScore,
+      matchedRules: ruleBasedAssessment.matchedRules,
+      indicators: ruleBasedAssessment.indicators,
+      impact: ruleBasedAssessment.impact,
+      mitigation: ruleBasedAssessment.mitigation
+    }
+  };
+}
+
+/**
+ * Call the Python AI service for AI-first threat analysis.
+ * Returns a complete assessment when AI succeeds, otherwise null.
+ */
+async function callAIService(event, ruleBasedAssessment) {
+  const aiServiceUrl = process.env.AI_SERVICE_URL || "http://localhost:5001";
+
+  try {
+    const response = await fetch(`${aiServiceUrl}/api/analyze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildAIServicePayload(event, ruleBasedAssessment)),
+      signal: AbortSignal.timeout(30000)
+    });
+
+    if (!response.ok) {
+      console.error("AI service returned non-OK status:", response.status);
+      return null;
+    }
+
+    const data = await response.json();
+
+    if (data.success && data.analysis) {
+      return data.analysis;
+    }
+
+    return null;
+  } catch (error) {
+    console.error("AI service call failed (graceful fallback):", error.message);
+    return null;
+  }
+}
+
+function mergeAIAssessment(ruleBasedAssessment, aiResult) {
+  const primaryMitigation = normalizeList(
+    aiResult.mitigation,
+    normalizeList(aiResult.aiMitigation, ruleBasedAssessment.mitigation)
+  );
+  const primaryIndicators = normalizeList(aiResult.indicators, ruleBasedAssessment.indicators);
+  const primaryRules = normalizeList(aiResult.matchedRules, ruleBasedAssessment.matchedRules);
+  const summary = normalizeOptionalText(
+    aiResult.summary,
+    normalizeOptionalText(aiResult.aiSummary, ruleBasedAssessment.summary)
+  );
+  const impact = normalizeOptionalText(
+    aiResult.impact,
+    normalizeOptionalText(aiResult.aiImpact, ruleBasedAssessment.impact)
+  );
+
+  return {
+    eventType: ruleBasedAssessment.eventType,
+    summary,
+    matchedRules: primaryRules,
+    indicators: primaryIndicators,
+    attackType: normalizeOptionalText(aiResult.attackType, ruleBasedAssessment.attackType),
+    severity: normalizeSeverity(aiResult.severity, ruleBasedAssessment.severity),
+    riskScore: normalizeRiskScore(aiResult.riskScore, ruleBasedAssessment.riskScore),
+    impact,
+    mitigation: primaryMitigation,
+    rawContext: ruleBasedAssessment.rawContext,
+    aiSummary: normalizeOptionalText(aiResult.aiSummary, summary),
+    aiImpact: normalizeOptionalText(aiResult.aiImpact, impact),
+    aiMitigation: normalizeList(aiResult.aiMitigation, primaryMitigation),
+    aiConfidence: normalizeConfidence(aiResult.aiConfidence),
+    aiAttackVector: normalizeOptionalText(aiResult.aiAttackVector),
+    aiAnalyzed: true
+  };
+}
+
+/**
+ * Build an AI-first assessment and fall back to rule-based analysis if needed.
+ */
+async function buildAssessmentWithAI(event) {
+  const ruleBased = buildAssessment(event);
+  const aiResult = await callAIService(event, ruleBased);
+
+  if (aiResult) {
+    return mergeAIAssessment(ruleBased, aiResult);
+  }
+
+  return { ...ruleBased, aiAnalyzed: false };
+}
+
+/**
+ * Full pipeline: AI-first analysis, then persist to database.
+ */
+async function createAssessmentWithAI(event) {
+  return createAssessmentFromEvent(event);
 }
 
 function shouldAutoAssess(action, metadata) {
@@ -247,11 +399,13 @@ function shouldAutoAssess(action, metadata) {
     "unauthorized",
     "suspicious"
   ].some((token) => lowerAction.includes(token)) ||
-    /script|select|union|drop|javascript:|onerror|iframe|\.\.\//i.test(text);
+    /script|select|union|drop|javascript:|onerror|iframe|\.\.\//.test(text);
 }
 
 module.exports = {
   buildAssessment,
+  buildAssessmentWithAI,
   createAssessmentFromEvent,
+  createAssessmentWithAI,
   shouldAutoAssess
 };

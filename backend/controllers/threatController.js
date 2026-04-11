@@ -1,6 +1,6 @@
 const {
-  buildAssessment,
-  createAssessmentFromEvent
+  buildAssessmentWithAI,
+  createAssessmentWithAI
 } = require("../services/threatAnalysisService");
 const { logEvent } = require("../utils/logger");
 const {
@@ -8,7 +8,7 @@ const {
   findLatestThreatAssessmentBySourceLog
 } = require("../data/store");
 
-exports.analyzeThreat = async (req, res) => {
+async function runThreatAnalysis(req, res, actionLabel) {
   try {
     const { eventType, input, payload, metadata } = req.body;
 
@@ -18,7 +18,7 @@ exports.analyzeThreat = async (req, res) => {
       });
     }
 
-    const assessment = await createAssessmentFromEvent({
+    const assessment = await createAssessmentWithAI({
       eventType,
       input,
       payload,
@@ -27,18 +27,27 @@ exports.analyzeThreat = async (req, res) => {
       ip: req.ip
     });
 
-    await logEvent(req.user?.id || null, `Threat Analysis Requested: ${eventType}`, req.ip, {
+    await logEvent(req.user?.id || null, actionLabel(eventType), req.ip, {
       eventType,
+      aiAnalyzed: assessment.aiAnalyzed === true,
       preview: typeof input === "string" ? input.slice(0, 200) : undefined
     });
 
-    res.status(201).json(assessment);
+    return res.status(201).json(assessment);
   } catch (error) {
     console.error("Threat analysis error:", error);
-    res.status(500).json({
+    return res.status(500).json({
       message: "Threat analysis failed"
     });
   }
+}
+
+exports.analyzeThreat = async (req, res) => {
+  return runThreatAnalysis(req, res, (eventType) => `AI-Driven Threat Analysis Requested: ${eventType}`);
+};
+
+exports.analyzeWithAI = async (req, res) => {
+  return runThreatAnalysis(req, res, (eventType) => `AI Threat Analysis Requested: ${eventType}`);
 };
 
 exports.analyzeSecurityLog = async (req, res) => {
@@ -53,11 +62,11 @@ exports.analyzeSecurityLog = async (req, res) => {
 
     const existingAssessment = await findLatestThreatAssessmentBySourceLog(log._id);
 
-    if (existingAssessment) {
+    if (existingAssessment && existingAssessment.aiAnalyzed !== false) {
       return res.json(existingAssessment);
     }
 
-    const assessment = await createAssessmentFromEvent({
+    const assessment = await createAssessmentWithAI({
       sourceLog: log._id,
       user: log.user,
       ip: log.ip,
@@ -75,6 +84,10 @@ exports.analyzeSecurityLog = async (req, res) => {
 };
 
 exports.previewThreat = (req, res) => {
+  return exports.previewWithAI(req, res);
+};
+
+exports.previewWithAI = async (req, res) => {
   try {
     const { eventType, input, payload, metadata } = req.body;
 
@@ -84,7 +97,7 @@ exports.previewThreat = (req, res) => {
       });
     }
 
-    const preview = buildAssessment({
+    const preview = await buildAssessmentWithAI({
       eventType,
       input,
       payload,
@@ -93,9 +106,9 @@ exports.previewThreat = (req, res) => {
 
     res.json(preview);
   } catch (error) {
-    console.error("Threat preview error:", error);
+    console.error("AI threat preview error:", error);
     res.status(500).json({
-      message: "Threat preview failed"
+      message: "AI threat preview failed"
     });
   }
 };

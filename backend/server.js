@@ -11,7 +11,7 @@ const authRoutes = require("./routes/authRoutes");
 
 const app = express();
 
-const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:5173,http://127.0.0.1:5173")
+const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
@@ -23,8 +23,15 @@ app.use(cors({
     }
 
     return callback(new Error("Origin not allowed by CORS"));
-  }
+  },
+  credentials: true
 }));
+
+// app.use(cors({
+//   origin : "http://localhost:5173",
+//   credentials :  true
+// }))
+
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
@@ -32,7 +39,9 @@ app.use((req, res, next) => {
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   res.setHeader("Cross-Origin-Resource-Policy", "same-site");
   res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
-  res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  if (isHttpsEnabled()) {
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
   res.setHeader("Cache-Control", "no-store");
   next();
 });

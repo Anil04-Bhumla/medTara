@@ -330,14 +330,15 @@ function App() {
     }
   }
 
-  async function handlePreviewThreat(event) {
+  async function handlePreviewThreat(event, useAI = false) {
     event.preventDefault()
     setLoading(true)
     setError('')
 
     try {
+      const endpoint = useAI ? '/api/security/preview-ai' : '/api/security/preview'
       const preview = await request(
-        '/api/security/preview',
+        endpoint,
         {
           method: 'POST',
           body: JSON.stringify({
@@ -349,7 +350,7 @@ function App() {
       )
 
       setThreatPreview(preview)
-      setStatus('Threat preview generated.')
+      setStatus(useAI ? 'AI-enriched threat preview generated.' : 'Threat preview generated.')
     } catch (previewError) {
       setError(previewError.message)
     } finally {
@@ -882,17 +883,70 @@ function App() {
                       }
                     />
                   </label>
-                  <button className="primary-button" type="submit" disabled={loading}>
-                    {loading ? 'Previewing...' : 'Preview threat'}
-                  </button>
+                  <div className="preview-buttons">
+                    <button className="primary-button" type="submit" disabled={loading}>
+                      {loading ? 'Previewing...' : 'Preview threat'}
+                    </button>
+                    <button
+                      className="ai-button"
+                      type="button"
+                      disabled={loading}
+                      onClick={(e) => handlePreviewThreat(e, true)}
+                    >
+                      {loading ? '🤖 Analyzing...' : '🤖 Preview with AI'}
+                    </button>
+                  </div>
                 </form>
 
                 {threatPreview ? (
                   <div className="preview-card">
-                    <p className="eyebrow">{threatPreview.severity} severity</p>
+                    <div className="assessment-top">
+                      <span className={`severity-pill severity-${threatPreview.severity}`}>
+                        {threatPreview.severity}
+                      </span>
+                      {threatPreview.aiAnalyzed ? <span className="ai-badge">🤖 AI Analyzed</span> : null}
+                    </div>
                     <h3>{threatPreview.attackType}</h3>
                     <p>{threatPreview.summary}</p>
                     <p className="subtle-text">Risk score: {threatPreview.riskScore}</p>
+
+                    {threatPreview.matchedRules?.length > 0 ? (
+                      <p className="subtle-text">
+                        Matched rules: {threatPreview.matchedRules.join(', ')}
+                      </p>
+                    ) : null}
+
+                    {threatPreview.aiAnalyzed ? (
+                      <div className="ai-section">
+                        <p className="ai-section-title">🤖 AI Analysis (Gemini)</p>
+                        {threatPreview.aiSummary ? (
+                          <p className="ai-summary">{threatPreview.aiSummary}</p>
+                        ) : null}
+                        {threatPreview.aiAttackVector ? (
+                          <p className="ai-vector">Attack vector: {threatPreview.aiAttackVector}</p>
+                        ) : null}
+                        {threatPreview.aiImpact ? (
+                          <div className="ai-impact">
+                            <strong>Impact:</strong> {threatPreview.aiImpact}
+                          </div>
+                        ) : null}
+                        {threatPreview.aiMitigation?.length > 0 ? (
+                          <>
+                            <p className="ai-section-title" style={{marginTop: '0.5rem'}}>Mitigations</p>
+                            <ul className="ai-mitigation-list">
+                              {threatPreview.aiMitigation.map((item, i) => (
+                                <li key={i}>{item}</li>
+                              ))}
+                            </ul>
+                          </>
+                        ) : null}
+                        {threatPreview.aiConfidence ? (
+                          <span className={`ai-confidence ai-confidence-${threatPreview.aiConfidence}`}>
+                            Confidence: {threatPreview.aiConfidence}
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
               </div>
@@ -906,16 +960,49 @@ function App() {
                 </div>
                 <div className="assessment-grid">
                   {assessments.map((assessment) => (
-                    <article className="assessment-card" key={assessment._id}>
+                    <article
+                      className={`assessment-card${assessment.aiAnalyzed ? ' ai-analyzed' : ''}`}
+                      key={assessment._id}
+                    >
                       <div className="assessment-top">
                         <span className={`severity-pill severity-${assessment.severity}`}>
                           {assessment.severity}
                         </span>
+                        {assessment.aiAnalyzed ? <span className="ai-badge">🤖 AI</span> : null}
                         <strong>{assessment.attackType}</strong>
                       </div>
                       <p>{assessment.summary}</p>
                       <p className="cell-meta">Event: {assessment.eventType}</p>
                       <p className="cell-meta">Risk score: {assessment.riskScore}</p>
+
+                      {assessment.aiAnalyzed ? (
+                        <div className="ai-section">
+                          <p className="ai-section-title">🤖 AI Analysis</p>
+                          {assessment.aiSummary ? (
+                            <p className="ai-summary">{assessment.aiSummary}</p>
+                          ) : null}
+                          {assessment.aiAttackVector ? (
+                            <p className="ai-vector">Vector: {assessment.aiAttackVector}</p>
+                          ) : null}
+                          {assessment.aiImpact ? (
+                            <div className="ai-impact">
+                              <strong>Impact:</strong> {assessment.aiImpact}
+                            </div>
+                          ) : null}
+                          {assessment.aiMitigation?.length > 0 ? (
+                            <ul className="ai-mitigation-list">
+                              {assessment.aiMitigation.map((item, i) => (
+                                <li key={i}>{item}</li>
+                              ))}
+                            </ul>
+                          ) : null}
+                          {assessment.aiConfidence ? (
+                            <span className={`ai-confidence ai-confidence-${assessment.aiConfidence}`}>
+                              Confidence: {assessment.aiConfidence}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </article>
                   ))}
                 </div>
