@@ -1,6 +1,6 @@
 # MedTara AI Services
 
-Python-based AI microservice that integrates **xAI Grok** into the MedTara Threat Analysis and Risk Assessment (TARA) module as the primary assessment engine.
+Python-based AI microservice that integrates **OpenRouter-hosted LLMs** into the MedTara Threat Analysis and Risk Assessment (TARA) module as the primary assessment engine.
 
 ## Setup
 
@@ -11,15 +11,16 @@ cd ai-services
 pip install -r requirements.txt
 ```
 
-### 2. Configure xAI API Key
+### 2. Configure OpenRouter API Key
 
-Get an API key from xAI.
+Get an API key from OpenRouter.
 
 Edit `ai-services/.env`:
 
 ```env
-XAI_API_KEY=your-actual-xai-api-key-here
-XAI_MODEL=grok-4.20-beta-latest-non-reasoning
+OPENROUTER_API_KEY=your-actual-openrouter-api-key-here
+OPENROUTER_MODEL=openrouter/free
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 ```
 
 ### 3. Run the Service
@@ -34,21 +35,21 @@ The service starts on `http://localhost:5001`.
 
 ### `GET /api/health`
 
-Returns service status and Grok readiness.
+Returns service status and OpenRouter readiness.
 
 ```json
 {
   "status": "ok",
   "service": "MedTara AI Services",
-  "provider": "xai-grok",
-  "grokReady": true,
+  "provider": "openrouter",
+  "openrouterReady": true,
   "timestamp": "2025-01-01T00:00:00Z"
 }
 ```
 
 ### `POST /api/analyze`
 
-Analyzes a security event using Grok and returns the main TARA assessment.
+Analyzes a security event using OpenRouter and returns the main TARA assessment.
 
 **Request Body:**
 
@@ -94,8 +95,8 @@ Analyzes a security event using Grok and returns the main TARA assessment.
 Node.js Backend (port 8000)
     ↓  POST /api/analyze
 Python AI Service (port 5001)
-    ↓  xAI API call
-xAI Grok
+    ↓  OpenRouter API call
+OpenRouter free model
     ↓  Structured JSON response
 Python AI Service
     ↓  Returns primary AI assessment

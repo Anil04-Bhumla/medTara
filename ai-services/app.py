@@ -1,12 +1,12 @@
 """
 MedTara AI Services — Flask Application
 ========================================
-REST API that bridges the Node.js backend with xAI Grok
+REST API that bridges the Node.js backend with OpenRouter-hosted LLMs
 for AI-driven threat analysis and risk assessment.
 
 Endpoints:
   GET  /api/health       — Service health check
-  POST /api/analyze      — Analyze a threat event with Grok AI
+  POST /api/analyze      — Analyze a threat event with OpenRouter AI
 """
 
 import os
@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
-from services.grok_service import analyze_threat, is_ready
+from services.openrouter_service import analyze_threat, is_ready
 
 AI_SERVICES_ROOT = Path(__file__).resolve().parent
 load_dotenv(AI_SERVICES_ROOT / ".env")
@@ -40,12 +40,12 @@ DEBUG = os.getenv("FLASK_DEBUG", "false").lower() == "true"
 
 @app.route("/api/health", methods=["GET"])
 def health_check():
-    """Return service status and Grok readiness."""
+    """Return service status and OpenRouter readiness."""
     return jsonify({
         "status": "ok",
         "service": "MedTara AI Services",
-        "provider": "xai-grok",
-        "grokReady": is_ready(),
+        "provider": "openrouter",
+        "openrouterReady": is_ready(),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     })
 
@@ -53,7 +53,7 @@ def health_check():
 @app.route("/api/analyze", methods=["POST"])
 def analyze():
     """
-    Analyze a threat event using xAI Grok.
+    Analyze a threat event using OpenRouter.
 
     Expected JSON body:
     {
@@ -109,6 +109,6 @@ if __name__ == "__main__":
     print(f"\n{'='*60}")
     print(f"  MedTara AI Services")
     print(f"  Port: {PORT}")
-    print(f"  Grok Ready: {is_ready()}")
+    print(f"  OpenRouter Ready: {is_ready()}")
     print(f"{'='*60}\n")
     app.run(host="0.0.0.0", port=PORT, debug=DEBUG)

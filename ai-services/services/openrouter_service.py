@@ -1,7 +1,7 @@
 """
-Grok AI Service for MedTara TARA Module
-=======================================
-Integrates with xAI Grok to provide AI-driven threat analysis.
+OpenRouter AI Service for MedTara TARA Module
+=============================================
+Integrates with OpenRouter-hosted LLMs to provide AI-driven threat analysis.
 Accepts structured threat context from the Node.js backend and returns
 primary AI-generated security assessments.
 """
@@ -17,27 +17,15 @@ from dotenv import load_dotenv
 AI_SERVICES_ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(AI_SERVICES_ROOT / ".env")
 
-# ---------------------------------------------------------------------------
-# Grok / xAI configuration
-# ---------------------------------------------------------------------------
+_api_key = os.getenv("OPENROUTER_API_KEY", "")
+_model_name = os.getenv("OPENROUTER_MODEL", "openrouter/free")
+_base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 
-_api_key = os.getenv("XAI_API_KEY", "") or os.getenv("GROK_API_KEY", "")
-_model_name = (
-    os.getenv("XAI_MODEL", "")
-    or os.getenv("GROK_MODEL", "")
-    or "grok-4.20-beta-latest-non-reasoning"
-)
-_base_url = os.getenv("XAI_BASE_URL", "https://api.x.ai/v1")
-
-if _api_key and _api_key != "your-xai-api-key-here":
-    _grok_ready = True
+if _api_key and _api_key != "your_real_openrouter_api_key":
+    _openrouter_ready = True
 else:
-    _grok_ready = False
-    print("[WARN] XAI_API_KEY is not set — AI analysis will return fallback responses.")
-
-# ---------------------------------------------------------------------------
-# System prompt — instructs Grok to behave as a cybersecurity expert
-# ---------------------------------------------------------------------------
+    _openrouter_ready = False
+    print("[WARN] OPENROUTER_API_KEY is not set — AI analysis will return fallback responses.")
 
 SYSTEM_PROMPT = """You are a senior cybersecurity analyst specializing in healthcare data protection
 and threat analysis. You are the primary assessment engine for an AI-driven Threat Analysis and
@@ -75,35 +63,17 @@ IMPORTANT RULES:
 
 
 def is_ready() -> bool:
-    """Check if the Grok service is properly configured and ready."""
-    return _grok_ready
+    return _openrouter_ready
 
 
 def analyze_threat(event_data: dict) -> dict:
-    """
-    Send a threat event to Grok for AI analysis.
-
-    Parameters
-    ----------
-    event_data : dict
-        May contain:
-        - eventType: str
-        - input: str
-        - payload: str
-        - metadata: object
-        - ruleBasedHints: dict
-
-    Returns
-    -------
-    dict with primary assessment keys plus AI metadata
-    """
-    if not _grok_ready:
-        return _fallback_response(event_data, reason="xAI API key not configured")
+    if not _openrouter_ready:
+      return _fallback_response(event_data, reason="OpenRouter API key not configured")
 
     user_prompt = _build_user_prompt(event_data)
 
     try:
-        raw_text = _call_grok_api(user_prompt)
+        raw_text = _call_openrouter_api(user_prompt)
         parsed = _parse_json_response(raw_text)
 
         return {
@@ -119,15 +89,13 @@ def analyze_threat(event_data: dict) -> dict:
             "aiAttackVector": parsed.get("aiAttackVector", "Unknown vector"),
             "aiAnalyzed": True,
         }
-
     except Exception as exc:
-        print(f"[ERROR] Grok API call failed: {exc}")
+        print(f"[ERROR] OpenRouter API call failed: {exc}")
         traceback.print_exc()
         return _fallback_response(event_data, reason=str(exc))
 
 
-def _call_grok_api(user_prompt: str) -> str:
-    """Call the xAI chat completions endpoint and return the raw model text."""
+def _call_openrouter_api(user_prompt: str) -> str:
     body = json.dumps({
         "model": _model_name,
         "temperature": 0.3,
@@ -142,7 +110,9 @@ def _call_grok_api(user_prompt: str) -> str:
         data=body,
         headers={
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {_api_key}"
+            "Authorization": f"Bearer {_api_key}",
+            "HTTP-Referer": "http://localhost:5001",
+            "X-Title": "MedTara AI Services"
         },
         method="POST"
     )
@@ -152,33 +122,23 @@ def _call_grok_api(user_prompt: str) -> str:
             payload = json.loads(response.read().decode("utf-8"))
     except error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"xAI returned HTTP {exc.code}: {detail}") from exc
+        raise RuntimeError(f"OpenRouter returned HTTP {exc.code}: {detail}") from exc
     except error.URLError as exc:
-        raise RuntimeError(f"Unable to reach xAI API: {exc.reason}") from exc
+        raise RuntimeError(f"Unable to reach OpenRouter API: {exc.reason}") from exc
 
     choices = payload.get("choices", [])
     if not choices:
-        raise RuntimeError(f"xAI response did not include choices: {payload}")
+        raise RuntimeError(f"OpenRouter response did not include choices: {payload}")
 
     message = choices[0].get("message", {})
-    content = message.get("content", "")
-
-    if isinstance(content, list):
-        text_parts = []
-        for item in content:
-            if isinstance(item, dict) and item.get("type") == "text":
-                text_parts.append(item.get("text", ""))
-        content = "\n".join(part for part in text_parts if part)
-
-    text = str(content).strip()
+    text = str(message.get("content", "")).strip()
     if not text:
-        raise RuntimeError(f"xAI response content was empty: {payload}")
+        raise RuntimeError(f"OpenRouter response content was empty: {payload}")
 
     return text
 
 
 def _build_user_prompt(event_data: dict) -> str:
-    """Construct the analysis prompt from the event data."""
     event_type = event_data.get("eventType", "Unknown Event")
     raw_input = event_data.get("input", "")
     raw_payload = event_data.get("payload", "")
@@ -210,7 +170,6 @@ def _build_user_prompt(event_data: dict) -> str:
 
 
 def _parse_json_response(raw_text: str) -> dict:
-    """Parse JSON from Grok response, handling markdown fences if present."""
     text = raw_text.strip()
 
     if text.startswith("```"):
@@ -229,7 +188,7 @@ def _parse_json_response(raw_text: str) -> dict:
             except json.JSONDecodeError:
                 pass
 
-        print(f"[WARN] Could not parse Grok response as JSON: {text[:200]}")
+        print(f"[WARN] Could not parse OpenRouter response as JSON: {text[:200]}")
         return {
             "summary": text[:500] if text else "AI analysis returned an unparseable result.",
             "attackType": "Suspicious Activity",
@@ -245,7 +204,6 @@ def _parse_json_response(raw_text: str) -> dict:
 
 
 def _fallback_response(event_data: dict, reason: str = "AI service unavailable") -> dict:
-    """Return a structured fallback when Grok is unavailable."""
     rule_hints = event_data.get("ruleBasedHints", {}) or {}
     attack_type = rule_hints.get("attackType", "Unknown")
     return {
@@ -259,7 +217,7 @@ def _fallback_response(event_data: dict, reason: str = "AI service unavailable")
         ),
         "mitigation": rule_hints.get("mitigation", [
             "Review the baseline assessment for immediate guidance.",
-            "Configure a valid xAI API key to enable AI-powered analysis.",
+            "Configure a valid OpenRouter API key to enable AI-powered analysis.",
             "Monitor the event manually until AI analysis is available.",
         ]),
         "matchedRules": rule_hints.get("matchedRules", []),
